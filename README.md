@@ -4,10 +4,11 @@ This application provides a reusable command-line interface for Crawl4AI's deep 
 
 ## Features
 
+### Core Crawling Capabilities
 - Configurable crawl depth and page limits
 - Domain filtering (allow/block specific domains)
 - URL pattern filtering
-- Content type filtering
+- Content type filtering including **PDF support**
 - Flexible markdown generation:
   - Default markdown generation without content filtering
   - Content filtering with multiple options:
@@ -18,12 +19,44 @@ This application provides a reusable command-line interface for Crawl4AI's deep 
 - Intelligent markdown saving: saves only filtered content when using content filters
 - Verbose output option
 - Structured result display
-- **Advanced crawling features**:
-  - Rate limiting with configurable delays and automatic backoff
-  - Memory-adaptive dispatching to prevent system overload
-  - Streaming mode for real-time result processing
-  - Real-time monitoring of crawling progress
-  - Configurable cache modes
+
+### 🚀 New 0.7.x Features (Adaptive Intelligence Update)
+
+#### **Virtual Scroll Support** 🌊
+- **Complete content capture** from infinite scroll pages (Twitter, Instagram, news feeds)
+- **Intelligent deduplication** based on normalized text content
+- **Three scrolling scenarios** handled automatically:
+  - Content unchanged (continue scrolling)
+  - Content appended (traditional infinite scroll)
+  - Content replaced (true virtual scroll - social media style)
+- **Configurable scroll parameters**: amount, count, and wait times
+- **Seamless integration** with existing extraction strategies
+
+#### **Async URL Seeder** 🎣
+- **Automated URL discovery** from sitemaps and Common Crawl index
+- **BM25 relevance scoring** for query-based URL filtering
+- **Multi-domain parallel discovery** with intelligent caching
+- **Live URL validation** with HEAD requests
+- **Metadata extraction** (JSON-LD, Open Graph)
+- **Scale from single URLs to thousands** with intelligent filtering
+
+#### **Enhanced PDF Processing** 📄
+- **Native PDF document crawling** and content extraction
+- **Seamless integration** with existing content filters
+- **Multi-format support**: HTML + PDF in single crawl sessions
+
+#### **Performance & Intelligence Optimizations** ⚡
+- **Lighter dependencies** for faster installation
+- **Improved Docker support** with optimized images
+- **Enhanced CI/CD pipeline** for reliable releases
+- **Adaptive pattern learning** for website-specific optimizations
+
+### Advanced Crawling Features
+- Rate limiting with configurable delays and automatic backoff
+- Memory-adaptive dispatching to prevent system overload
+- Streaming mode for real-time result processing
+- Real-time monitoring of crawling progress
+- Configurable cache modes
 
 ## Installation
 
@@ -163,6 +196,28 @@ python webscraper_crawl4ai.py https://example.com \
 | `--allowed-domains` | Domains to allow (e.g., 'example.com') | None |
 | `--blocked-domains` | Domains to block (e.g., 'ads.example.com') | None |
 | `--allowed-content-types` | Content types to allow (e.g., 'text/html') | None |
+| `--include-pdfs` | Include PDF documents in crawling | False |
+
+### 🚀 New 0.7.x Features
+
+#### Virtual Scroll Configuration
+
+| Argument | Description | Default |
+|----------|-------------|--------|
+| `--enable-virtual-scroll` | Enable virtual scroll for infinite scroll pages | False |
+| `--scroll-amount` | Amount to scroll in pixels | 1000 |
+| `--max-scrolls` | Maximum number of scrolls | 10 |
+| `--scroll-wait-time` | Wait time between scrolls in seconds | 2.0 |
+
+#### URL Seeder Configuration
+
+| Argument | Description | Default |
+|----------|-------------|--------|
+| `--enable-url-seeder` | Use URL seeder for automated URL discovery | False |
+| `--seeder-query` | Search query for URL seeder BM25 filtering | None |
+| `--seeder-sources` | URL discovery sources (`sitemap`, `cc`, `sitemap+cc`) | sitemap |
+| `--seeder-score-threshold` | Minimum relevance score for seeded URLs | 0.5 |
+| `--seeder-max-urls` | Maximum URLs to discover via seeder | 100 |
 
 ### Content Filter Options
 
@@ -292,6 +347,113 @@ python webscraper_crawl4ai.py https://example.com --content-filter pruning --sav
 
 ```bash
 python webscraper_crawl4ai.py https://example.com --content-filter bm25 --user-query "python tutorial" --save-markdown
+```
+
+## 🚀 New 0.7.x Feature Examples
+
+### Virtual Scroll for Infinite Scroll Pages
+
+Capture complete content from social media feeds, news sites, and other infinite scroll pages:
+
+```bash
+# Basic virtual scroll for Twitter-like feeds
+python webscraper_crawl4ai.py https://twitter.com/user/timeline \
+    --enable-virtual-scroll \
+    --max-scrolls 20 \
+    --scroll-amount 1000 \
+    --scroll-wait-time 3.0 \
+    --save-markdown
+```
+
+```bash
+# Advanced virtual scroll with content filtering
+python webscraper_crawl4ai.py https://news-site.com \
+    --enable-virtual-scroll \
+    --max-scrolls 15 \
+    --scroll-amount 800 \
+    --content-filter bm25 \
+    --user-query "breaking news technology" \
+    --save-markdown
+```
+
+### URL Seeder for Automated Discovery
+
+Discover and crawl hundreds of relevant URLs automatically:
+
+```bash
+# Discover URLs from sitemap with relevance filtering
+python webscraper_crawl4ai.py https://example.com \
+    --enable-url-seeder \
+    --seeder-query "machine learning tutorial" \
+    --seeder-sources sitemap \
+    --seeder-score-threshold 0.7 \
+    --seeder-max-urls 50 \
+    --save-markdown
+```
+
+```bash
+# Advanced URL seeding with multiple sources
+python webscraper_crawl4ai.py https://docs.python.org \
+    --enable-url-seeder \
+    --seeder-query "python programming guide" \
+    --seeder-sources sitemap cc \
+    --seeder-score-threshold 0.6 \
+    --seeder-max-urls 100 \
+    --max-depth 2 \
+    --content-filter pruning \
+    --save-markdown
+```
+
+### PDF Document Processing
+
+Include PDF documents in your crawling sessions:
+
+```bash
+# Crawl both HTML and PDF content
+python webscraper_crawl4ai.py https://research-site.com \
+    --include-pdfs \
+    --allowed-content-types "text/html" "application/pdf" \
+    --save-markdown \
+    --output-dir "./research_docs"
+```
+
+```bash
+# Advanced PDF + HTML crawling with URL seeder
+python webscraper_crawl4ai.py https://academic-site.edu \
+    --enable-url-seeder \
+    --seeder-query "research papers artificial intelligence" \
+    --include-pdfs \
+    --seeder-max-urls 75 \
+    --content-filter llm \
+    --llm-provider "openai/gpt-4o" \
+    --llm-instruction "Extract key research findings and methodologies" \
+    --save-markdown
+```
+
+### Combined Advanced Features
+
+Leverage multiple 0.7.x features together for maximum efficiency:
+
+```bash
+# Ultimate crawling setup with all new features
+python webscraper_crawl4ai.py https://tech-blog.com \
+    --enable-url-seeder \
+    --seeder-query "artificial intelligence deep learning" \
+    --seeder-sources sitemap+cc \
+    --seeder-max-urls 200 \
+    --enable-virtual-scroll \
+    --max-scrolls 10 \
+    --include-pdfs \
+    --content-filter bm25 \
+    --user-query "AI machine learning tutorial" \
+    --bm25-threshold 1.5 \
+    --enable-rate-limiter \
+    --base-delay 2.0 4.0 \
+    --dispatcher memory \
+    --memory-threshold 85.0 \
+    --stream \
+    --save-markdown \
+    --output-dir "./ai_research"
 ```
 
 ### Generate and save markdown content with LLM filter

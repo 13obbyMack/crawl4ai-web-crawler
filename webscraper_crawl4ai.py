@@ -22,6 +22,9 @@ from crawl4ai import (
     CacheMode,
     RateLimiter,
     CrawlerMonitor,
+    VirtualScrollConfig,
+    AsyncUrlSeeder,
+    SeedingConfig,
 )
 from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher, SemaphoreDispatcher
 from crawl4ai.content_filter_strategy import PruningContentFilter, BM25ContentFilter, LLMContentFilter
@@ -87,6 +90,33 @@ async def main():
     # Content filter type selection - optional
     parser.add_argument("--content-filter", type=str, choices=["pruning", "bm25", "llm"], 
                         help="Content filter type to use (optional)")
+    
+    # Virtual Scroll Configuration
+    parser.add_argument("--enable-virtual-scroll", action="store_true", 
+                        help="Enable virtual scroll for infinite scroll pages")
+    parser.add_argument("--scroll-amount", type=int, default=1000, 
+                        help="Amount to scroll in pixels (default: 1000)")
+    parser.add_argument("--max-scrolls", type=int, default=10, 
+                        help="Maximum number of scrolls (default: 10)")
+    parser.add_argument("--scroll-wait-time", type=float, default=2.0, 
+                        help="Wait time between scrolls in seconds (default: 2.0)")
+    
+    # URL Seeder Configuration
+    parser.add_argument("--enable-url-seeder", action="store_true", 
+                        help="Use URL seeder for automated URL discovery")
+    parser.add_argument("--seeder-query", type=str, 
+                        help="Search query for URL seeder BM25 filtering")
+    parser.add_argument("--seeder-sources", type=str, nargs="*", 
+                        choices=["sitemap", "cc", "sitemap+cc"], default=["sitemap"], 
+                        help="URL discovery sources (default: sitemap)")
+    parser.add_argument("--seeder-score-threshold", type=float, default=0.5, 
+                        help="Minimum relevance score for seeded URLs (default: 0.5)")
+    parser.add_argument("--seeder-max-urls", type=int, default=100, 
+                        help="Maximum URLs to discover via seeder (default: 100)")
+    
+    # PDF Support
+    parser.add_argument("--include-pdfs", action="store_true", 
+                        help="Include PDF documents in crawling")
     
     # Pruning filter parameters
     parser.add_argument("--pruning-threshold", type=float, default=0.45, 
@@ -184,8 +214,15 @@ async def main():
                 blocked_domains=args.blocked_domains or []
             ))
         
-        if args.allowed_content_types:
-            filters.append(ContentTypeFilter(allowed_types=args.allowed_content_types))
+        # Handle content types including PDF support
+        allowed_content_types = args.allowed_content_types or []
+        if args.include_pdfs:
+            if 'application/pdf' not in allowed_content_types:
+                allowed_content_types.append('application/pdf')
+            print("PDF documents will be included in crawling")
+        
+        if allowed_content_types:
+            filters.append(ContentTypeFilter(allowed_types=allowed_content_types))
         
         # Create filter chain - ALWAYS create a filter chain even if empty
         # This prevents the 'NoneType' has no attribute 'apply' error
@@ -276,13 +313,68 @@ async def main():
                 if len(markdown_options) > 0:
                     print(f"Using markdown options: {markdown_options}")
         
+        # Handle URL seeding if enabled
+        urls_to_crawl = [args.url]  # Default to single URL
+        
+        if args.enable_url_seeder:
+            print(f"\n===== URL SEEDER DISCOVERY =====")
+            print(f"Discovering URLs from {args.seeder_sources} for domain: {args.url}")
+            if args.seeder_query:
+                print(f"Using search query: '{args.seeder_query}'")
+            
+            # Create seeding configuration
+            seeding_config = SeedingConfig(
+                sources=args.seeder_sources,
+                query=args.seeder_query,
+                score_threshold=args.seeder_score_threshold,
+                max_urls=args.seeder_max_urls
+            )
+            
+            # Initialize URL seeder
+            seeder = AsyncUrlSeeder()
+            
+            try:
+                # Discover URLs
+                seeded_results = await seeder.seed_urls(args.url, config=seeding_config)
+                
+                # Extract URLs from seeder results
+                discovered_urls = [result.url for result in seeded_results if hasattr(result, 'url')]
+                
+                if discovered_urls:
+                    urls_to_crawl = discovered_urls
+                    print(f"Discovered {len(discovered_urls)} URLs via seeder")
+                    print(f"Score threshold: {args.seeder_score_threshold}")
+                    
+                    # Show first few URLs as examples
+                    for i, url in enumerate(discovered_urls[:5]):
+                        print(f"  → {url}")
+                    if len(discovered_urls) > 5:
+                        print(f"  ... and {len(discovered_urls) - 5} more")
+                else:
+                    print("No URLs discovered via seeder, falling back to original URL")
+                    
+            except Exception as e:
+                print(f"URL seeder failed: {e}")
+                print("Falling back to original URL")
+        
+        # Configure Virtual Scroll if enabled
+        virtual_scroll_config = None
+        if args.enable_virtual_scroll:
+            virtual_scroll_config = VirtualScrollConfig(
+                scroll_amount=args.scroll_amount,
+                max_scrolls=args.max_scrolls,
+                wait_time=args.scroll_wait_time
+            )
+            print(f"\nVirtual scroll enabled: {args.max_scrolls} scrolls of {args.scroll_amount}px each")
+        
         # Configure the crawler
         config = CrawlerRunConfig(
             deep_crawl_strategy=strategy,
             verbose=args.verbose,
             markdown_generator=md_generator if args.save_markdown else None,
             stream=args.stream,
-            cache_mode=getattr(CacheMode, args.cache_mode.upper())
+            cache_mode=getattr(CacheMode, args.cache_mode.upper()),
+            virtual_scroll_config=virtual_scroll_config
         )
         
         # Create rate limiter if enabled
@@ -339,7 +431,9 @@ async def main():
                 pages_by_depth = {}
                 
                 # Process results as they arrive
-                async for result in await crawler.arun(args.url, config=config, dispatcher=dispatcher):
+                # Use first URL from discovered URLs or fallback to original
+                crawl_url = urls_to_crawl[0] if urls_to_crawl else args.url
+                async for result in await crawler.arun(crawl_url, config=config, dispatcher=dispatcher):
                     total_pages += 1
                     
                     # Update depth statistics
@@ -399,7 +493,14 @@ async def main():
                     print("\nNo markdown content was generated for any of the crawled pages.")
             else:
                 # Batch mode - get all results at once
-                results = await crawler.arun(args.url, config=config, dispatcher=dispatcher)
+                if len(urls_to_crawl) > 1 and args.enable_url_seeder:
+                    # Use arun_many for multiple URLs from seeder
+                    print(f"\n===== BATCH CRAWLING {len(urls_to_crawl)} SEEDED URLS =====")
+                    results = await crawler.arun_many(urls_to_crawl, config=config, dispatcher=dispatcher)
+                else:
+                    # Single URL crawling (original behavior)
+                    crawl_url = urls_to_crawl[0] if urls_to_crawl else args.url
+                    results = await crawler.arun(crawl_url, config=config, dispatcher=dispatcher)
                 
                 # Display results
                 print(f"\n===== CRAWL RESULTS =====\n")

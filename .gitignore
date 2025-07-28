@@ -1,5 +1,5 @@
-/docs
 __pycache__
+/docs
 /output
 /examples
 .env
